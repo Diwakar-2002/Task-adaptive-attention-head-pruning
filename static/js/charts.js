@@ -1,157 +1,50 @@
-/* ==========================================================================
-   Chart.js Rendering Engine for CausalPrune-AI
-   ========================================================================== */
+/* Chart.js helpers. Colours follow a fixed entity order (dark-mode steps). */
+const SERIES_DARK = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'];
+const CONFIG_COLOR = {dense: '#3987e5', headrouter: '#d95926', static: '#199e70', random: '#c98500', oracle: '#d55181'};
+const INK2 = '#c3c2b7', GRIDC = 'rgba(255,255,255,0.07)';
+const charts = {};
 
-let accuracyChart = null;
-let klChart = null;
-let latencyChart = null;
-let radarChart = null;
-
-function initBenchmarkCharts() {
-    const accuracyCtx = document.getElementById('accuracyChart')?.getContext('2d');
-    const klCtx = document.getElementById('klChart')?.getContext('2d');
-    const latencyCtx = document.getElementById('latencyChart')?.getContext('2d');
-    const radarCtx = document.getElementById('radarChart')?.getContext('2d');
-
-    if (!accuracyCtx) return;
-
-    // Common styling
-    Chart.defaults.color = '#9CA3AF';
-    Chart.defaults.font.family = "'Inter', sans-serif";
-
-    // 1. Accuracy Retention Chart
-    accuracyChart = new Chart(accuracyCtx, {
-        type: 'line',
-        data: {
-            labels: ['0%', '10%', '20%', '30%', '40%', '50%'],
-            datasets: [
-                {
-                    label: 'Task-Aware Dynamic (Ours)',
-                    data: [100, 99.8, 99.7, 99.6, 99.5, 99.2],
-                    borderColor: '#10B981',
-                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                    fill: true,
-                    tension: 0.3
-                },
-                {
-                    label: 'Static Causal Pruning (Ours)',
-                    data: [100, 99.5, 99.1, 98.8, 98.4, 97.1],
-                    borderColor: '#8B5CF6',
-                    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-                    fill: true,
-                    tension: 0.3
-                },
-                {
-                    label: 'Magnitude Pruning (Baseline)',
-                    data: [100, 96.2, 91.5, 87.1, 84.2, 73.0],
-                    borderColor: '#F43F5E',
-                    borderDash: [5, 5],
-                    fill: false,
-                    tension: 0.3
-                }
-            ]
+function baseOptions(yTitle, xTitle) {
+    return {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        interaction: {mode: 'index', intersect: false},
+        plugins: {
+            legend: {labels: {color: INK2, usePointStyle: true, boxWidth: 8}},
+            tooltip: {backgroundColor: '#1a1a19', borderColor: 'rgba(255,255,255,.1)', borderWidth: 1, titleColor: '#f0efec', bodyColor: INK2},
         },
-        options: {
-            responsive: true,
-            scales: {
-                y: { min: 70, max: 100, grid: { color: 'rgba(255,255,255,0.05)' } },
-                x: { grid: { color: 'rgba(255,255,255,0.05)' } }
-            }
-        }
-    });
-
-    // 2. Logit KL Divergence Chart
-    klChart = new Chart(klCtx, {
-        type: 'bar',
-        data: {
-            labels: ['Full Model', 'Task Dynamic', 'Static Causal', 'Magnitude Baseline'],
-            datasets: [{
-                label: 'Logit KL Divergence (Lower is Better)',
-                data: [0.000, 0.008, 0.021, 0.185],
-                backgroundColor: ['#06B6D4', '#10B981', '#8B5CF6', '#F43F5E']
-            }]
+        scales: {
+            x: {title: {display: !!xTitle, text: xTitle, color: INK2}, ticks: {color: INK2}, grid: {color: GRIDC}},
+            y: {title: {display: !!yTitle, text: yTitle, color: INK2}, ticks: {color: INK2}, grid: {color: GRIDC}},
         },
-        options: {
-            responsive: true,
-            scales: {
-                y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } }
-            }
-        }
-    });
-
-    // 3. Inference Latency Chart
-    latencyChart = new Chart(latencyCtx, {
-        type: 'bar',
-        data: {
-            labels: ['Full Model', 'Magnitude (40%)', 'Static Causal (40%)', 'Task Dynamic (55% Cut)'],
-            datasets: [{
-                label: 'ms / token (Lower is Faster)',
-                data: [18.4, 12.1, 11.8, 8.7],
-                backgroundColor: ['#6B7280', '#F43F5E', '#8B5CF6', '#10B981']
-            }]
-        },
-        options: {
-            responsive: true,
-            scales: {
-                y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } }
-            }
-        }
-    });
-
-    // 4. Multi-Metric Radar Chart
-    radarChart = new Chart(radarCtx, {
-        type: 'radar',
-        data: {
-            labels: ['Accuracy %', 'Speedup Factor', 'FLOP Efficiency', 'Safety Fidelity', 'Memory Savings'],
-            datasets: [
-                {
-                    label: 'Task-Aware Dynamic',
-                    data: [99, 95, 90, 98, 88],
-                    borderColor: '#10B981',
-                    backgroundColor: 'rgba(16, 185, 129, 0.2)'
-                },
-                {
-                    label: 'Magnitude Pruning',
-                    data: [75, 70, 70, 45, 60],
-                    borderColor: '#F43F5E',
-                    backgroundColor: 'rgba(244, 63, 94, 0.2)'
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            scales: {
-                r: {
-                    angleLines: { color: 'rgba(255,255,255,0.1)' },
-                    grid: { color: 'rgba(255,255,255,0.1)' },
-                    pointLabels: { color: '#9CA3AF' }
-                }
-            }
-        }
-    });
+    };
 }
 
-function updateBenchmarkChartsWithData(data) {
-    if (!data || !data.strategies) return;
-    const strats = data.strategies;
-
-    if (latencyChart) {
-        latencyChart.data.datasets[0].data = [
-            strats.unpruned.ms_per_token,
-            strats.magnitude.ms_per_token,
-            strats.static_causal.ms_per_token,
-            strats.task_dynamic.ms_per_token
-        ];
-        latencyChart.update();
+function drawSweepChart(id, tasks, reg) {
+    charts[id]?.destroy();
+    const datasets = tasks.map(([k, t], i) => {
+        const d = t.profile.sweep[0].score || 1e-9;
+        return {label: k, data: t.profile.sweep.map((p) => ({x: p.sparsity * 100, y: p.score / d * 100})),
+            borderColor: SERIES_DARK[i], backgroundColor: SERIES_DARK[i], borderWidth: 2, pointRadius: 4, pointHoverRadius: 6};
+    });
+    if (reg && reg.budget_type === 'relative') {
+        datasets.push({label: `budget (−${(reg.accuracy_budget * 100).toFixed(1)}%)`, data: [{x: 0, y: 100 - reg.accuracy_budget * 100}, {x: 50, y: 100 - reg.accuracy_budget * 100}],
+            borderColor: '#8b8a84', borderDash: [5, 4], borderWidth: 1, pointRadius: 0});
     }
+    const opt = baseOptions('dev score (% of dense)', 'heads pruned (%)');
+    opt.scales.x.type = 'linear';
+    opt.interaction = {mode: 'nearest', intersect: false};
+    opt.plugins.tooltip.callbacks = {label: (c) => `${c.dataset.label}: ${c.parsed.y.toFixed(1)}% at ${c.parsed.x.toFixed(0)}% pruned`};
+    charts[id] = new Chart(document.getElementById(id), {type: 'line', data: {datasets}, options: opt});
+}
 
-    if (klChart) {
-        klChart.data.datasets[0].data = [
-            strats.unpruned.kl_divergence,
-            strats.task_dynamic.kl_divergence,
-            strats.static_causal.kl_divergence,
-            strats.magnitude.kl_divergence
-        ];
-        klChart.update();
-    }
+function drawLatencyChart(id, B, tasks) {
+    charts[id]?.destroy();
+    const configs = Object.keys(B.speed[tasks[0]]);
+    const datasets = configs.map((c) => ({
+        label: CFG_LABEL[c], backgroundColor: CONFIG_COLOR[c], borderRadius: 4, borderSkipped: 'bottom',
+        data: tasks.map((t) => B.speed[t][c].total_ms.median),
+    }));
+    const opt = baseOptions('median latency (ms)', '');
+    opt.plugins.tooltip.callbacks = {label: (c) => `${c.dataset.label}: ${c.parsed.y.toFixed(0)} ms`};
+    charts[id] = new Chart(document.getElementById(id), {type: 'bar', data: {labels: tasks, datasets}, options: opt});
 }

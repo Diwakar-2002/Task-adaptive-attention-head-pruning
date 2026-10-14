@@ -3,428 +3,133 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CausalPrune-AI | Interventional Attention Head Pruning Engine</title>
-    <!-- Google Fonts -->
+    <title>HeadRouter Live Lab</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <!-- FontAwesome Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Stylesheet -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-    <div class="app-container">
-        <!-- Top Navbar Header -->
-        <header class="top-nav glass-card">
-            <div class="nav-brand">
-                <div class="logo-icon">
-                    <i class="fa-solid fa-scissors"></i>
+<div class="app">
+    <header class="top glass">
+        <div class="brand">
+            <div class="logo"><i class="fa-solid fa-route"></i></div>
+            <div>
+                <h1>HeadRouter</h1>
+                <span class="sub">Task-aware dynamic attention-head pruning &mdash; live, measured, not simulated</span>
+            </div>
+        </div>
+        <div class="pills" id="status-pills"><span class="pill">connecting&hellip;</span></div>
+    </header>
+
+    <div class="banner warn hidden" id="artifact-banner"></div>
+
+    <nav class="tabs glass">
+        <button class="tab active" data-tab="live"><i class="fa-solid fa-bolt"></i> Live Compare</button>
+        <button class="tab" data-tab="masks"><i class="fa-solid fa-table-cells"></i> Head Masks</button>
+        <button class="tab" data-tab="sweep"><i class="fa-solid fa-chart-line"></i> Accuracy vs Sparsity</button>
+        <button class="tab" data-tab="bench"><i class="fa-solid fa-gauge-high"></i> Benchmark</button>
+    </nav>
+
+    <!-- ===================== LIVE ===================== -->
+    <section class="panel active" id="tab-live">
+        <div class="live-grid">
+            <div class="glass card">
+                <label class="lbl" for="prompt"><i class="fa-solid fa-terminal"></i> Your task / prompt</label>
+                <textarea id="prompt" rows="7" placeholder="Type any request, e.g. 'Is this review positive or negative? The plot was dull but the acting was superb.'"></textarea>
+                <div class="examples" id="examples"></div>
+                <div class="controls">
+                    <label>Routing
+                        <select id="force-task"><option value="">Auto (classifier)</option></select>
+                    </label>
+                    <label>Max new tokens
+                        <input type="number" id="max-tokens" min="1" max="1024" value="128">
+                    </label>
+                    <label>Runs (median)
+                        <select id="runs"><option>1</option><option selected>3</option><option>5</option></select>
+                    </label>
                 </div>
-                <div class="logo-text">
-                    <h1>CausalPrune<span class="gradient-text">-AI</span></h1>
-                    <span class="subtitle">Task-Aware Interventional Attention Head Pruning</span>
+                <button class="btn primary" id="run-btn"><i class="fa-solid fa-play"></i> Run Dense vs HeadRouter</button>
+                <p class="hint">Both runs use the same weights, greedy decoding and the same code path. HeadRouter runs
+                    with physically sliced Q/K/V/O weights for the predicted task; its end-to-end time includes the classifier.</p>
+            </div>
+
+            <div class="glass card" id="routing-card">
+                <div class="card-h"><h3><i class="fa-solid fa-diagram-project"></i> Routing decision</h3><span class="tag" id="route-ms"></span></div>
+                <div id="routing-body" class="muted">Run a prompt to see which task the classifier predicts and which head mask is applied.</div>
+                <div id="mask-mini" class="mask-mini"></div>
+            </div>
+        </div>
+
+        <div class="compare-grid">
+            <div class="glass card out dense">
+                <div class="card-h"><h3><span class="dot dense"></span> Dense model <small>(all heads)</small></h3><span class="tag" id="dense-state">idle</span></div>
+                <div class="out-text" id="dense-text"></div>
+                <div class="metrics" id="dense-metrics"></div>
+            </div>
+            <div class="glass card out hr">
+                <div class="card-h"><h3><span class="dot hr"></span> HeadRouter <small id="hr-sub">(task-pruned)</small></h3><span class="tag" id="hr-state">idle</span></div>
+                <div class="out-text" id="hr-text"></div>
+                <div class="metrics" id="hr-metrics"></div>
+            </div>
+        </div>
+
+        <div class="glass card" id="delta-card">
+            <div class="card-h"><h3><i class="fa-solid fa-scale-balanced"></i> Measured difference</h3></div>
+            <div class="delta-grid" id="delta-grid"><span class="muted">Waiting for both runs.</span></div>
+            <p class="hint" id="delta-note"></p>
+        </div>
+
+        <div class="glass card">
+            <div class="card-h"><h3><i class="fa-solid fa-clock-rotate-left"></i> Session history</h3>
+                <button class="btn ghost sm" id="clear-history">Clear</button></div>
+            <div class="table-wrap"><table class="tbl" id="history"><thead><tr>
+                <th>Task</th><th>Variant</th><th>Heads pruned</th><th>Tokens</th><th>Dense ms</th><th>HeadRouter ms</th>
+                <th>Speedup</th><th>Dense ms/tok</th><th>HR ms/tok</th><th>Energy saved</th><th>Same output</th>
+            </tr></thead><tbody></tbody></table></div>
+        </div>
+    </section>
+
+    <!-- ===================== MASKS ===================== -->
+    <section class="panel" id="tab-masks">
+        <div class="glass card">
+            <div class="card-h"><h3><i class="fa-solid fa-table-cells"></i> Per-task head importance &amp; selected mask</h3>
+                <div class="seg" id="mask-task-seg"></div></div>
+            <p class="hint" id="mask-desc"></p>
+            <div class="heat-wrap">
+                <div class="heat-ylab">layer</div>
+                <div>
+                    <div class="heat" id="heat"></div>
+                    <div class="heat-xlab">query head</div>
+                </div>
+                <div class="heat-side">
+                    <div class="legend-ramp"><span>low</span><div class="ramp"></div><span>high importance</span></div>
+                    <div class="legend-item"><span class="cell-sample pruned"></span> pruned (physically removed)</div>
+                    <div class="legend-item"><span class="cell-sample protected"></span> protected (top for every task)</div>
+                    <div id="mask-stats" class="kv-list"></div>
                 </div>
             </div>
-            
-            <div class="nav-stats">
-                <div class="stat-pill">
-                    <span class="label">MODEL</span>
-                    <span class="value" id="model-name-val">distilgpt2 (144 Heads)</span>
-                </div>
-                <div class="stat-pill highlight">
-                    <span class="label">CAUSAL ACCURACY</span>
-                    <span class="value">99.4% Retention</span>
-                </div>
-                <div class="stat-pill success">
-                    <span class="label">ESTIMATED SPEEDUP</span>
-                    <span class="value" id="top-speedup-val">2.1x Faster</span>
-                </div>
-            </div>
-        </header>
+            <div class="tooltip hidden" id="heat-tip"></div>
+        </div>
+    </section>
 
-        <!-- Main Dashboard Content -->
-        <main class="dashboard-grid">
-            <!-- HUD Overview Cards -->
-            <section class="hud-section">
-                <div class="hud-card glass-card">
-                    <div class="hud-icon purple"><i class="fa-solid fa-microchip"></i></div>
-                    <div class="hud-info">
-                        <span class="hud-label">Total Attention Heads</span>
-                        <span class="hud-value" id="hud-total-heads">144</span>
-                        <span class="hud-sub">12 Layers × 12 Heads</span>
-                    </div>
-                </div>
+    <!-- ===================== SWEEP ===================== -->
+    <section class="panel" id="tab-sweep">
+        <div class="glass card">
+            <div class="card-h"><h3><i class="fa-solid fa-chart-line"></i> Dev score vs sparsity (from scripts/03_build_masks.py)</h3></div>
+            <div class="chart-box"><canvas id="sweep-chart"></canvas></div>
+            <div class="table-wrap"><table class="tbl" id="sweep-table"></table></div>
+        </div>
+    </section>
 
-                <div class="hud-card glass-card">
-                    <div class="hud-icon cyan"><i class="fa-solid fa-gauge-high"></i></div>
-                    <div class="hud-info">
-                        <span class="hud-label">Active Head Ratio</span>
-                        <span class="hud-value" id="hud-active-ratio">100%</span>
-                        <span class="hud-sub" id="hud-pruned-count">0 Heads Ablated</span>
-                    </div>
-                </div>
-
-                <div class="hud-card glass-card">
-                    <div class="hud-icon green"><i class="fa-solid fa-bolt"></i></div>
-                    <div class="hud-info">
-                        <span class="hud-label">FLOPs Reduction</span>
-                        <span class="hud-value" id="hud-flops-reduction">0.0%</span>
-                        <span class="hud-sub" id="hud-latency-val">~0.0 ms/tok savings</span>
-                    </div>
-                </div>
-
-                <div class="hud-card glass-card">
-                    <div class="hud-icon amber"><i class="fa-solid fa-shield-halved"></i></div>
-                    <div class="hud-info">
-                        <span class="hud-label">Logit KL Divergence</span>
-                        <span class="hud-value" id="hud-kl-div">0.0000</span>
-                        <span class="hud-sub status-safe" id="hud-kl-status">Identical Output</span>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Navigation Tabs -->
-            <nav class="section-tabs glass-card">
-                <button class="tab-btn active" data-tab="matrix-tab">
-                    <i class="fa-solid fa-braille"></i> Attention Head Heatmap
-                </button>
-                <button class="tab-btn" data-tab="playground-tab">
-                    <i class="fa-solid fa-vial"></i> Interventional Playground
-                </button>
-                <button class="tab-btn" data-tab="router-tab">
-                    <i class="fa-solid fa-route"></i> Dynamic Task Router
-                </button>
-                <button class="tab-btn" data-tab="benchmark-tab">
-                    <i class="fa-solid fa-chart-line"></i> Benchmark Suite
-                </button>
-            </nav>
-
-            <!-- Tab 1: Attention Head Heatmap -->
-            <section id="matrix-tab" class="tab-content active glass-card">
-                <div class="card-header">
-                    <div>
-                        <h2><i class="fa-solid fa-braille"></i> Interventional Saliency Matrix</h2>
-                        <p class="desc">Compare <strong>Causal KL Divergence</strong> (safety impact when turned off) vs standard <strong>Weight Magnitude</strong> baseline.</p>
-                    </div>
-                    <div class="matrix-controls">
-                        <div class="toggle-group">
-                            <button class="toggle-btn active" id="view-causal-btn">
-                                <i class="fa-solid fa-flask"></i> Causal Impact (KL)
-                            </button>
-                            <button class="toggle-btn" id="view-magnitude-btn">
-                                <i class="fa-solid fa-weight-hanging"></i> Magnitude Baseline
-                            </button>
-                        </div>
-                        <button class="action-btn secondary" id="run-matrix-eval-btn">
-                            <i class="fa-solid fa-rotate-right"></i> Compute Heatmap Matrix
-                        </button>
-                    </div>
-                </div>
-
-                <div class="heatmap-container">
-                    <div class="y-axis-label">TRANSFORMER LAYERS (0 to 11)</div>
-                    <div class="matrix-wrapper">
-                        <div class="x-axis-header" id="matrix-x-header">
-                            <!-- Dynamically generated head numbers 0-11 -->
-                        </div>
-                        <div class="grid-matrix" id="head-matrix-grid">
-                            <!-- Dynamically generated 12x12 head cells -->
-                        </div>
-                        <div class="x-axis-label">ATTENTION HEADS (0 to 11)</div>
-                    </div>
-                </div>
-
-                <div class="matrix-legend-bar">
-                    <span class="legend-label">Head Impact Score:</span>
-                    <div class="gradient-bar"></div>
-                    <div class="legend-labels">
-                        <span>0.0 (Safe / Prunable)</span>
-                        <span>0.5 (Moderate)</span>
-                        <span>1.0+ (Critical Circuit)</span>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Tab 2: Interventional Playground -->
-            <section id="playground-tab" class="tab-content glass-card">
-                <div class="card-header">
-                    <div>
-                        <h2><i class="fa-solid fa-vial"></i> Live Interventional Safety Playground</h2>
-                        <p class="desc">Ablate (turn off) specific attention heads in real time and test if the model's output changes!</p>
-                    </div>
-                </div>
-
-                <div class="playground-layout">
-                    <div class="input-panel">
-                        <label for="prompt-input" class="input-label"><i class="fa-solid fa-terminal"></i> Test Prompt</label>
-                        <textarea id="prompt-input" class="custom-textarea" rows="3">The human brain is a remarkably efficient computing engine because only certain neural circuits</textarea>
-                        
-                        <div class="preset-prompts">
-                            <span class="preset-title">Presets:</span>
-                            <button class="preset-chip" data-prompt="The human brain is a remarkably efficient computing engine because only certain neural circuits">Brain Analogy</button>
-                            <button class="preset-chip" data-prompt="Summarize the core benefits of task-aware attention head pruning in transformers:">Summarization</button>
-                            <button class="preset-chip" data-prompt="def calculate_causal_divergence(baseline_logits, ablated_logits):">Python Code</button>
-                        </div>
-
-                        <div class="ablated-heads-selector">
-                            <label class="input-label"><i class="fa-solid fa-scissors"></i> Currently Ablated Heads (<span id="ablated-count-badge">0</span>)</label>
-                            <div class="pills-container" id="ablated-pills-list">
-                                <span class="empty-hint">No heads ablated yet. Click on the Matrix tab to add heads or pick a preset below.</span>
-                            </div>
-                            
-                            <div class="safety-threshold-box glass-card">
-                                <div class="slider-header">
-                                    <span class="lbl"><i class="fa-solid fa-sliders"></i> Causal Safety Threshold (&epsilon;)</span>
-                                    <span class="val text-purple" id="kl-threshold-val">KL &le; 0.050</span>
-                                </div>
-                                <input type="range" id="kl-threshold-slider" min="0.005" max="0.100" step="0.005" value="0.050" class="custom-slider">
-                                <span class="sub-hint">Dynamically prunes ALL heads with KL divergence &le; &epsilon; (Counterfactual Safety Test).</span>
-                            </div>
-
-                            <div class="quick-ablate-actions">
-                                <button class="action-btn primary sm" id="auto-prune-safe-heads-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> Auto-Prune All Safe Heads (KL &le; &epsilon;)</button>
-                                <button class="action-btn secondary sm" id="ablate-safe-bottom20-btn"><i class="fa-solid fa-filter"></i> Prune Bottom 40% Heads</button>
-                                <button class="action-btn secondary sm" id="clear-ablated-heads-btn"><i class="fa-solid fa-trash"></i> Reset (Full Model)</button>
-                            </div>
-                        </div>
-
-                        <button class="action-btn primary full-width" id="run-ablation-test-btn">
-                            <i class="fa-solid fa-bolt"></i> Run Interventional Safety Test
-                        </button>
-                    </div>
-
-                    <div class="output-panel">
-                        <div class="comparison-grid">
-                            <div class="output-card baseline">
-                                <div class="output-header">
-                                    <span><i class="fa-solid fa-circle-check text-green"></i> Unpruned Full Model (100% Heads)</span>
-                                    <span class="badge" id="base-speed-badge">0 ms/tok</span>
-                                </div>
-                                <div class="output-body" id="baseline-output-text">
-                                    Click 'Run Interventional Safety Test' to generate baseline generation.
-                                </div>
-                            </div>
-
-                            <div class="output-card ablated">
-                                <div class="output-header">
-                                    <span><i class="fa-solid fa-scissors text-purple"></i> Interventional Ablated Model</span>
-                                    <span class="badge purple" id="ablated-speed-badge">0 ms/tok</span>
-                                </div>
-                                <div class="output-body" id="ablated-output-text">
-                                    Ablated output will appear here for comparison.
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="verdict-banner glass-card" id="verdict-banner">
-                            <div class="verdict-icon"><i class="fa-solid fa-shield-cat"></i></div>
-                            <div class="verdict-content">
-                                <h4 id="verdict-title">Interventional Verdict: Pending Execution</h4>
-                                <p id="verdict-desc">Run a test to check whether removing target attention heads alters the final answer.</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Tab 3: Dynamic Task Router -->
-            <section id="router-tab" class="tab-content glass-card">
-                <div class="card-header">
-                    <div>
-                        <h2><i class="fa-solid fa-route"></i> Task-Aware Dynamic Router & Per-Task Calculation Test</h2>
-                        <p class="desc">Select a specific task below to test and compare its active heads, inference latency (ms/tok), and FLOP savings live!</p>
-                    </div>
-                    <button class="action-btn primary" id="eval-all-tasks-btn">
-                        <i class="fa-solid fa-chart-pie"></i> Evaluate Overall Performance Across All Tasks
-                    </button>
-                </div>
-
-                <div class="router-layout">
-                    <div class="task-selector-grid">
-                        <div class="task-card active" data-task="summarization">
-                            <div class="task-icon"><i class="fa-solid fa-file-contract"></i></div>
-                            <h3>Text Summarization</h3>
-                            <p>Global aggregation & content extraction.</p>
-                            <span class="active-tag">Active: 44.4% (55.6% Cut)</span>
-                        </div>
-
-                        <div class="task-card" data-task="sentiment">
-                            <div class="task-icon"><i class="fa-solid fa-face-smile"></i></div>
-                            <h3>Sentiment Analysis</h3>
-                            <p>Adjective-noun polarity circuits.</p>
-                            <span class="active-tag">Active: 34.7% (65.3% Cut)</span>
-                        </div>
-
-                        <div class="task-card" data-task="logic_math">
-                            <div class="task-icon"><i class="fa-solid fa-code"></i></div>
-                            <h3>Code & Logic</h3>
-                            <p>Induction heads & syntax parsing.</p>
-                            <span class="active-tag">Active: 50.0% (50.0% Cut)</span>
-                        </div>
-
-                        <div class="task-card" data-task="qa">
-                            <div class="task-icon"><i class="fa-solid fa-circle-question"></i></div>
-                            <h3>Question Answering</h3>
-                            <p>Fact retrieval & entity linking.</p>
-                            <span class="active-tag">Active: 38.9% (61.1% Cut)</span>
-                        </div>
-
-                        <div class="task-card" data-task="sorting">
-                            <div class="task-icon"><i class="fa-solid fa-arrow-down-short-wide"></i></div>
-                            <h3>Text Sorting</h3>
-                            <p>Sequential index matching heads.</p>
-                            <span class="active-tag">Active: 30.0% (70.0% Cut)</span>
-                        </div>
-                    </div>
-
-                    <div class="router-execution-card glass-card">
-                        <div class="router-input">
-                            <label class="input-label"><i class="fa-solid fa-wand-magic-sparkles"></i> Selected Task Test Prompt</label>
-                            <div class="input-with-button">
-                                <input type="text" id="router-prompt-input" class="custom-input" value="Summarize the core technical features of task-aware attention head pruning in transformers:">
-                                <button class="action-btn primary" id="run-task-route-btn"><i class="fa-solid fa-bolt"></i> Test Selected Task Inference & Latency</button>
-                            </div>
-                        </div>
-
-                        <div class="router-metrics-bar">
-                            <div class="metric-box">
-                                <span class="lbl">Current Selected Task</span>
-                                <span class="val text-cyan" id="route-task-detected">Text Summarization</span>
-                            </div>
-                            <div class="metric-box">
-                                <span class="lbl">Active Attention Heads</span>
-                                <span class="val text-purple" id="route-heads-active">32 / 72</span>
-                            </div>
-                            <div class="metric-box">
-                                <span class="lbl">Measured Latency Speedup</span>
-                                <span class="val text-green" id="route-speedup-factor">1.47x Faster</span>
-                            </div>
-                            <div class="metric-box">
-                                <span class="lbl">FLOPs Savings</span>
-                                <span class="val text-amber" id="route-flops-saved">23.4%</span>
-                            </div>
-                        </div>
-
-                        <!-- Side-by-Side Task Output & Latency Comparison -->
-                        <div class="task-output-comparison-grid">
-                            <div class="output-card baseline">
-                                <div class="output-header">
-                                    <span><i class="fa-solid fa-circle-check text-green"></i> Unpruned Baseline (Full Model)</span>
-                                    <span class="badge" id="task-base-speed">18.4 ms/tok</span>
-                                </div>
-                                <div class="output-body" id="task-base-output-text">
-                                    Baseline unpruned generation for this task prompt will appear here...
-                                </div>
-                            </div>
-
-                            <div class="output-card ablated">
-                                <div class="output-header">
-                                    <span><i class="fa-solid fa-route text-purple"></i> Task-Pruned Sub-Network</span>
-                                    <span class="badge purple" id="task-pruned-speed">11.8 ms/tok</span>
-                                </div>
-                                <div class="output-body" id="task-pruned-output-text">
-                                    Task-pruned generation for this task prompt will appear here...
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Multi-Task Pruning Comparison Table -->
-                    <div class="task-comparison-card glass-card">
-                        <h3><i class="fa-solid fa-table-columns"></i> Multi-Task Dynamic Head Pruning Matrix</h3>
-                        <p class="desc">Quantifying how CausalPrune-AI turns off distinct numbers and sets of attention heads per task domain:</p>
-                        <table class="task-table">
-                            <thead>
-                                <tr>
-                                    <th>Task Domain</th>
-                                    <th>Active Heads</th>
-                                    <th>Pruned Heads</th>
-                                    <th>Pruning Ratio (%)</th>
-                                    <th>FLOP Savings</th>
-                                    <th>Speedup</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr class="active-row">
-                                    <td><i class="fa-solid fa-file-contract text-purple"></i> <strong>Text Summarization</strong></td>
-                                    <td>32 / 72</td>
-                                    <td>40 / 72</td>
-                                    <td><span class="badge purple">55.6% Cut</span></td>
-                                    <td>23.4%</td>
-                                    <td><span class="text-green">1.47x</span></td>
-                                </tr>
-                                <tr>
-                                    <td><i class="fa-solid fa-face-smile text-cyan"></i> <strong>Sentiment Analysis</strong></td>
-                                    <td>25 / 72</td>
-                                    <td>47 / 72</td>
-                                    <td><span class="badge cyan">65.3% Cut</span></td>
-                                    <td>27.4%</td>
-                                    <td><span class="text-green">1.55x</span></td>
-                                </tr>
-                                <tr>
-                                    <td><i class="fa-solid fa-code text-amber"></i> <strong>Code & Logical Reasoning</strong></td>
-                                    <td>36 / 72</td>
-                                    <td>36 / 72</td>
-                                    <td><span class="badge amber">50.0% Cut</span></td>
-                                    <td>21.0%</td>
-                                    <td><span class="text-green">1.43x</span></td>
-                                </tr>
-                                <tr>
-                                    <td><i class="fa-solid fa-circle-question text-rose"></i> <strong>Question Answering</strong></td>
-                                    <td>28 / 72</td>
-                                    <td>44 / 72</td>
-                                    <td><span class="badge rose">61.1% Cut</span></td>
-                                    <td>25.7%</td>
-                                    <td><span class="text-green">1.52x</span></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Tab 4: Benchmark Suite -->
-            <section id="benchmark-tab" class="tab-content glass-card">
-                <div class="card-header">
-                    <div>
-                        <h2><i class="fa-solid fa-chart-line"></i> Performance & Accuracy Benchmarking Suite</h2>
-                        <p class="desc">Rigorous quantitative comparison across <strong>Unpruned</strong>, <strong>Magnitude Baseline</strong>, <strong>Static Causal</strong>, and <strong>Task-Aware Dynamic Pruning</strong>.</p>
-                    </div>
-                    <button class="action-btn primary" id="run-full-benchmark-btn">
-                        <i class="fa-solid fa-play"></i> Run Live Benchmark Suite
-                    </button>
-                </div>
-
-                <div class="benchmark-grid">
-                    <div class="chart-card glass-card">
-                        <h3>Accuracy Retention (%) vs Pruning Ratio</h3>
-                        <canvas id="accuracyChart"></canvas>
-                    </div>
-
-                    <div class="chart-card glass-card">
-                        <h3>Logit KL Divergence (Lower is Safer)</h3>
-                        <canvas id="klChart"></canvas>
-                    </div>
-
-                    <div class="chart-card glass-card">
-                        <h3>Inference Latency (ms / token)</h3>
-                        <canvas id="latencyChart"></canvas>
-                    </div>
-
-                    <div class="chart-card glass-card">
-                        <h3>Multi-Metric Radar Benchmark</h3>
-                        <canvas id="radarChart"></canvas>
-                    </div>
-                </div>
-            </section>
-        </main>
-    </div>
-
-    <!-- Scripts -->
-    <script src="js/charts.js"></script>
-    <script src="js/app.js"></script>
+    <!-- ===================== BENCH ===================== -->
+    <section class="panel" id="tab-bench">
+        <div id="bench-body"><div class="glass card muted">Loading&hellip;</div></div>
+    </section>
+</div>
+<script src="js/charts.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>

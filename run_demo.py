@@ -1,28 +1,16 @@
 #!/usr/bin/env python3
-"""
-CausalPrune-AI Launcher Script
-Starts the FastAPI server and serves the visual dashboard.
-"""
+"""Launch the HeadRouter API + live dashboard (http://localhost:8000)."""
 
-import sys
 import os
+import sys
+
 import uvicorn
 
-def main():
-    print("=" * 70)
-    print("  🚀 CausalPrune-AI: Task-Aware Interventional LLM Pruning Engine")
-    print("=" * 70)
-    print("Starting FastAPI Server & Glassmorphic Visual Dashboard...")
-    print("  ► Dashboard URL: http://localhost:8000")
-    print("  ► REST API Docs: http://localhost:8000/docs")
-    print("=" * 70)
-
-    # Ensure root path is in sys.path
-    root_dir = os.path.dirname(os.path.abspath(__file__))
-    if root_dir not in sys.path:
-        sys.path.insert(0, root_dir)
-
-    uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=True)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 if __name__ == "__main__":
-    main()
+    from headrouter.config import load_config
+
+    cfg = load_config(os.environ.get("HEADROUTER_CONFIG"))
+    print(f"HeadRouter dashboard: http://localhost:{cfg['server']['port']}   API docs: /docs")
+    uvicorn.run("api.main:app", host=cfg["server"]["host"], port=cfg["server"]["port"])

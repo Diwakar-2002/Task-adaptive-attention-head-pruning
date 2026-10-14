@@ -1,0 +1,62 @@
+# HeadRouter default configuration.
+# Every script and the API server read this file. Override with --config <path>.
+
+model:
+  name: Qwen/Qwen2.5-1.5B-Instruct
+  dtype: bfloat16          # bfloat16 | float16 | float32
+  device: cuda             # cuda | cpu
+
+artifacts_dir: artifacts
+seed: 0
+
+# Task keys, in the order used everywhere (importance tensors, registry, plots).
+tasks: [sentiment, nli, qa, math, summarization]
+
+data:
+  summarization_max_words: 450   # CNN/DM articles are truncated to keep eval tractable
+  qa_max_words: 300              # BoolQ passages are truncated
+
+classifier:
+  embedder: sentence-transformers/all-MiniLM-L6-v2
+  train_per_task: 400
+  test_per_task: 100
+  general_class: true            # extra "general" class (Alpaca instructions) -> always dense
+  confidence_threshold: 0.80     # below this the request falls back to the dense model
+
+profiling:
+  scorer: gradient               # gradient (Michel et al. 2019) | activation | causal
+  calib_size: 128                # calibration examples per task
+  causal_calib_size: 16          # the causal (per-head KL ablation) scorer is O(L*H) forwards
+  max_target_tokens: 128         # teacher-forced target tokens used for the loss
+  layer_normalize: false         # per-layer L2 normalisation (Michel et al.); off: it forces uniform
+                                 # pruning across layers and lost accuracy in scripts/iterative_study.py
+
+masks:
+  mode: query                    # query (prune Q heads) | kv_group (prune whole GQA groups)
+  compensation: mean             # mean (FLAP-style bias compensation) | none (zero-ablation)
+  iterative: true                # re-score surviving heads after each sparsity step (Michel et al.)
+  sparsity_levels: [0.1, 0.2, 0.3, 0.4, 0.5]
+  budget_type: relative          # relative | absolute
+  accuracy_budget: 0.015         # max allowed drop on the dev split (1.5 %)
+  min_heads_per_layer: 2
+  protected_top_frac: 0.10       # heads in the top 10 % for EVERY task are never pruned
+  dev_size: {sentiment: 300, nli: 300, qa: 300, math: 100, summarization: 80}
+
+generation:
+  math_max_new_tokens: 256
+  summarization_max_new_tokens: 96
+  batch_size: 16
+
+benchmark:
+  quality_size: {sentiment: 500, nli: 500, qa: 500, math: 200, summarization: 150}
+  speed_prompts_per_task: 5
+  speed_repeats: 3
+  speed_new_tokens: 64
+  warmup_runs: 2
+  context_lengths: [512, 1024, 2048, 4096]
+  context_repeats: 5
+
+server:
+  host: 0.0.0.0
+  port: 8000
+  default_max_new_tokens: 128
